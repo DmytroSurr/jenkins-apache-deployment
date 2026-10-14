@@ -14,33 +14,28 @@ pipeline {
                     set -eu
                     echo "Checking Ubuntu environment..."
                     cat /etc/os-release
-                    command -v apt-get
-                    command -v systemctl
-                    command -v curl
+                    java -version
+                    git --version
                 '''
             }
         }
 
-        stage('Install Apache') {
+        stage('Deploy Apache') {
             steps {
-                echo 'Apache installation will run after deployment permissions are configured.'
                 sh '''
                     set -eu
-                    if ! command -v apache2 >/dev/null 2>&1; then
-                        echo "Apache is not installed yet."
-                        echo "Deployment permissions must be configured before installation."
-                        exit 1
-                    fi
-                    apache2 -v
+                    echo "Installing and configuring Apache..."
+                    sudo -n /usr/local/sbin/deploy-apache.sh
                 '''
             }
         }
 
-        stage('Check Apache Service') {
+        stage('Verify Apache Service') {
             steps {
                 sh '''
                     set -eu
                     systemctl is-active --quiet apache2
+                    apache2 -v
                     echo "Apache service is active."
                 '''
             }
@@ -50,16 +45,20 @@ pipeline {
             steps {
                 sh '''
                     set -eu
+
                     for attempt in 1 2 3 4 5; do
-                        if curl --fail --silent --show-error http://127.0.0.1/; then
+                        if curl --fail --silent --show-error \
+                            http://127.0.0.1/; then
                             echo
                             echo "HTTP smoke test passed."
                             exit 0
                         fi
-                        echo "Waiting for Apache... attempt ${attempt}/5"
+
+                        echo "Retry ${attempt}/5..."
                         sleep 2
                     done
-                    echo "Apache HTTP smoke test failed."
+
+                    echo "HTTP smoke test failed."
                     exit 1
                 '''
             }
@@ -68,10 +67,10 @@ pipeline {
 
     post {
         success {
-            echo 'Deployment checks completed successfully.'
+            echo 'SUCCESS: Apache deployment and health checks passed.'
         }
         failure {
-            echo 'Pipeline failed. Review the stage logs above.'
+            echo 'FAILURE: Check the stage logs for details.'
         }
         always {
             echo 'Pipeline execution finished.'
